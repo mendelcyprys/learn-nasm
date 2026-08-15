@@ -206,10 +206,38 @@ confirms something real: `ld` baked fixed addresses into this binary
 **1.1 — Change the message.** Edit the string and rebuild. Confirm the
 length still comes out right without you touching `msglen`. Why does it?
 
-**1.2 — Exit codes.** Change the exit status from 0 to 42. Rebuild, run,
-then check it with `echo $?` in the shell. Now set a breakpoint at
-`_start`, run, and use GDB to change the value *at runtime* before it
-exits: `set $rdi = 7`, then `continue`, then check `echo $?` again.
+**1.2 — Exit codes.** Change the exit status from 0 to 42. Rebuild, run
+it in the shell, and check it with `echo $?`.
+
+Now change the value *at runtime*. Break at `_start`, `run`, then step
+until `rdi` has been loaded but the `syscall` hasn't executed yet — and
+override it:
+
+```gdb
+set $rdi = 7
+continue
+```
+
+You can't use `echo $?` for this: the program exits inside GDB, so the
+shell only sees GDB's own exit status. GDB reports it instead. On exit it
+prints:
+
+```
+[Inferior 1 (process 1234) exited with code 07]
+```
+
+**That code is octal.** `07` is 7, but `set $rdi = 42` would print
+`exited with code 052`. A status of 0 prints `exited normally` with no
+number at all.
+
+For a decimal answer, ask GDB directly after the program has exited:
+
+```gdb
+p $_exitcode
+```
+
+`$_exitcode` is a convenience variable GDB sets when the inferior
+terminates. Use it rather than decoding octal in your head.
 
 **1.3 — Prove the 32-bit zero-extension rule.** Write a program that does
 this and nothing else, then step through it in GDB watching `rax`:
