@@ -200,10 +200,26 @@ run
 
 x/1gd &number          # one giant, signed decimal   -> 7
 x/8xb &number          # the same 8 bytes in hex     -> 07 00 00 00 ...
-x/5c letters           # five characters             -> 65 'A', 66 'B', ...
-x/s letters            # as a string (runs past the end — no NUL!)
+x/5c &letters          # five characters             -> 65 'A', 66 'B', ...
+x/s &letters           # as a string (runs past the end — no NUL!)
 x/1xb &small           # -> 0xc8
-x/16xb outbuf          # the .bss buffer, all zeros before you write to it
+x/16xb &outbuf         # the .bss buffer, all zeros before you write to it
+```
+
+**Always write `&symbol`, not bare `symbol`.** Your NASM binary has no
+debug info, so GDB knows these names only as *minimal symbols* — a name
+and an address, with no type attached. Bare `letters` asks GDB for the
+symbol's **value**, which it can't work out without knowing the type, and
+you'll get an error along the lines of `'letters' has unknown type; cast
+it to its declared type`. `&letters` asks for its **address**, which is
+exactly what the minimal symbol table does know, and what `x` wants
+anyway.
+
+If you ever do want the bare form, cast it explicitly:
+
+```gdb
+p (char[5]) letters
+p *(long*)&number
 ```
 
 Notice `x/8xb &number` shows `07 00 00 00 00 00 00 00` — the least
