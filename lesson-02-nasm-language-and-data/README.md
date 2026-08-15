@@ -235,9 +235,28 @@ p/x $rax               # in hex
 p/t $rax               # in binary
 p (char) $al           # cast
 
-set $rax = 100         # change a register mid-run
-set {qword}&result = 999   # change memory: write 8 bytes at &result
-set {byte}outbuf = 88      # write one byte
+set $rax = 100             # change a register mid-run
+set {long}&result = 999    # change memory: write 8 bytes at &result
+set {char}&outbuf = 88     # write one byte
+```
+
+**Use C type names here, not NASM ones.** `set {qword}...` fails with the
+confusing message `No symbol table is loaded` — GDB doesn't know the word
+`qword`, so it tries to look it up as a symbol and reports the lookup
+failure rather than a syntax error. The sizes map like this:
+
+| NASM | GDB / C | Bytes |
+|---|---|---|
+| `byte` | `char` | 1 |
+| `word` | `short` | 2 |
+| `dword` | `int` | 4 |
+| `qword` | `long` | 8 |
+
+An equivalent form, which some people find clearer:
+
+```gdb
+set var *(long*)&result = 999
+set var *(char*)&outbuf = 88
 ```
 
 Being able to *change* state mid-run is what makes a debugger better than
@@ -283,5 +302,5 @@ contract, and verify it in GDB:
 > zero-extended. No other register is modified.
 
 **2.6 — Reverse a value with `set`.** Run your program, break before the
-`write` syscall, and use GDB's `set {byte}` to change what gets printed
+`write` syscall, and use GDB's `set {char}` to change what gets printed
 without rebuilding. Confirm the output changes.
