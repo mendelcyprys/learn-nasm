@@ -259,7 +259,7 @@ they'll come back in. Verify with `x/5gx $rsp`.
 matches `disassemble _start` output.
 
 **5.4 — Corrupt it on purpose.** Break inside `helper` and use
-`set {qword}$rsp = 0x4141414141414141` to overwrite the return address.
+`set {long}$rsp = 0x4141414141414141` to overwrite the return address.
 `continue` and observe the crash. Then read the fault address GDB reports.
 This is, mechanically, exactly what a stack-smashing exploit does — worth
 seeing once so the concept isn't mysterious.
