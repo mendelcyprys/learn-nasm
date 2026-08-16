@@ -53,6 +53,25 @@ inventing unique names. Local labels do not appear in the symbol table,
 so GDB can't break on them by name — which is exactly why you'll learn
 address-based breakpoints later.
 
+### Don't name a label after a register
+
+NASM resolves register names before label names, so a label that collides
+with one is silently reinterpreted:
+
+```nasm
+ch      resb 2              ; `ch` is the high byte of rcx!
+mov byte [ch], 'x'          ; parses as a memory access through a register
+```
+
+The whole 8086 8-bit set is off limits: `ah al bh bl ch cl dh dl`. So are
+`ax bx cx dx si di sp bp`, their `e`/`r` forms, `r8`–`r15` with any width
+suffix, `st0`–`st7`, and `xmm0`–`xmm15`. `ch`, `si`, `di`, `dl`, and `bp`
+are the ones that look most like innocent variable names — they're the
+ones that catch people.
+
+Give data labels descriptive names (`outch`, `src_ptr`, `char_buf`) and
+the problem never arises.
+
 ## 3. Defining data
 
 In `.data` — values physically stored in the file:
