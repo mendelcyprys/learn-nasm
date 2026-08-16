@@ -27,8 +27,11 @@ Two things to burn in:
    kernel restores all your registers except `rax`, `rcx`, `r11`. You do
    not need to save `rsi`/`rdi`/`rdx` around a syscall.
 
-Also: there is **no stack alignment requirement** for `syscall`, and no
-red zone protection — the kernel switches to its own stack.
+Also: there is **no stack alignment requirement** for `syscall` — unlike
+a `call`, which needs `rsp` 16-byte aligned. And your **red zone survives
+a syscall**, because the kernel switches to its own stack rather than
+using yours. So unlike a function call, a syscall doesn't disturb scratch
+data you left below `rsp`.
 
 ## 2. Error handling
 
