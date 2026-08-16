@@ -169,7 +169,7 @@ multiples of 5, `.` otherwise:
 global _start
 
 section .bss
-    ch      resb 2
+    outch   resb 2
 
 section .text
 _start:
@@ -194,19 +194,19 @@ _start:
     test rdx, rdx
     jz  .hash
 
-    mov byte [ch], '.'
+    mov byte [outch], '.'
     jmp .print
 .star:
-    mov byte [ch], '*'
+    mov byte [outch], '*'
     jmp .print
 .hash:
-    mov byte [ch], '#'
+    mov byte [outch], '#'
 
 .print:
-    mov byte [ch + 1], 10          ; newline
+    mov byte [outch + 1], 10          ; newline
     mov rax, 1
     mov rdi, 1
-    mov rsi, ch
+    mov rsi, outch
     mov rdx, 2
     syscall
 
@@ -322,7 +322,7 @@ counts with `objdump -d`.
 
 **4.3 — Conditional breakpoint practice.** Using `loops.asm`, set a
 breakpoint that fires only when the character about to be printed is `#`.
-(Hint: break after the `.hash` store, or use a condition on `[ch]`.)
+(Hint: break after the `.hash` store, or use a condition on `[outch]`.)
 
 **4.4 — Contract: max of three.**
 
