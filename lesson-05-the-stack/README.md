@@ -51,15 +51,49 @@ point in the frame:
 my_function:
     push rbp            ; save the caller's rbp
     mov rbp, rsp        ; rbp now marks this frame's base
-    sub rsp, 32         ; allocate locals
+    sub rsp, 32         ; allocate 32 bytes = four quadwords of locals
 
-    mov qword [rbp - 8], 42     ; local variable, at a FIXED offset from rbp
-    mov qword [rbp - 16], 99
+    mov qword [rbp - 8],  42    ; local 1 — fixed offset from rbp
+    mov qword [rbp - 16], 99    ; local 2
+    mov qword [rbp - 24], 7     ; local 3
+    mov qword [rbp - 32], 1234  ; local 4 — the last one that fits
 
     mov rsp, rbp        ; deallocate everything at once
     pop rbp             ; restore caller's rbp
     ret
 ```
+
+Count the slots: 32 bytes divided by 8 is four, at offsets −8, −16, −24,
+and −32. Note that `[rbp - 32]` is the *lowest* valid local — it's exactly
+where `rsp` is pointing after the `sub`. Writing to `[rbp - 40]` would be
+below `rsp`, outside your frame, and liable to be clobbered by anything
+you call.
+
+Here's the memory picture, addresses increasing upward:
+
+```
+    higher addresses
+    ┌──────────────────────┐
+    │ caller's stack ...   │
+    ├──────────────────────┤
+    │ return address       │  ← pushed by `call`
+    ├──────────────────────┤
+    │ saved rbp            │  ← rbp points HERE
+    ├──────────────────────┤
+    │ local 1              │  [rbp - 8]
+    ├──────────────────────┤
+    │ local 2              │  [rbp - 16]
+    ├──────────────────────┤
+    │ local 3              │  [rbp - 24]
+    ├──────────────────────┤
+    │ local 4              │  [rbp - 32]  ← rsp points HERE
+    └──────────────────────┘
+    lower addresses
+```
+
+Two offsets worth memorizing from this diagram: `[rbp + 8]` is the return
+address, and `[rbp + 16]` is where a seventh stack-passed argument would
+land (Lesson 06 exercise 6.4).
 
 The point of `rbp` is that offsets from it stay constant even if `rsp`
 moves during the function (from pushes, or a variable-size allocation).
@@ -167,6 +201,8 @@ helper:
 
     mov qword [rbp - 8], 111
     mov qword [rbp - 16], 222
+    mov qword [rbp - 24], 333
+    mov qword [rbp - 32], 444      ; lowest slot — equals [rsp] right now
 
     mov rsp, rbp
     pop rbp
