@@ -78,6 +78,11 @@ Three things will bite you:
    process dies with SIGFPE. There is no flag to check; it's a hardware
    exception. Guard your divisors.
 
+   For unsigned `div`, "too large to fit" has an exact condition:
+   **`#DE` is raised iff `rdx >= divisor`.** Below that, the quotient fits
+   and you get a perfectly valid answer to the wrong question — which is
+   why point 1 is the more dangerous of the two.
+
 `div` is also *slow* — tens of cycles, versus one for `add`. Dividing by a
 power of two? Use a shift (Lesson 12).
 
@@ -225,10 +230,29 @@ one-operand `mul`. Read the full 128-bit answer out of `rdx:rax` in GDB
 using `p/x $rdx` and `p/x $rax`. Verify the low half against a two-operand
 `imul` — and confirm the high half is what you lose by using it.
 
-**3.3 — Break `div` on purpose.** Write a program that does `div` with
-`rdx` deliberately left non-zero, and observe what happens (SIGFPE — GDB
-will catch it and tell you). Then fix it with `xor rdx, rdx` and see it
-work. This failure mode is worth experiencing once, deliberately.
+**3.3 — Stale `rdx`, two different failures.** `div` never malfunctions —
+it faithfully divides the 128-bit value `rdx:rax`. Leaving junk in `rdx`
+just means you asked it to divide a number you didn't intend. Which of
+two things happens depends on the numbers:
+
+**(a) A wrong answer.** Set `rdx = 1`, `rax = 100`, divisor 7, and run
+`div`. The dividend is `2^64 + 100`, so the quotient is roughly
+2.6 × 10¹⁸ — large, but it fits in 64 bits, so there's no fault at all.
+Read `rax` and `rdx` in GDB and confirm the result is exactly
+`(2^64 + 100) / 7`. Nothing warned you.
+
+**(b) An actual fault.** Now set `rdx = 100`, `rax = 100`, divisor 7. The
+quotient would exceed 64 bits, the CPU raises `#DE`, and the process dies
+with SIGFPE. GDB will stop and report it.
+
+Work out the general rule from these two cases: for unsigned `div`,
+`#DE` occurs **exactly when `rdx >= divisor`** (since the quotient is at
+least `rdx * 2^64 / divisor`). Verify it by finding the boundary — pick a
+divisor and try `rdx` one below and one equal to it.
+
+Then add `xor rdx, rdx` and confirm both cases give the intended answer.
+The takeaway is that (a) is the more dangerous failure: (b) at least
+crashes.
 
 **3.4 — Contract: modulo.** Write a fragment satisfying:
 
