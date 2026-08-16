@@ -106,8 +106,46 @@ avoids a branch entirely, which matters because a mispredicted branch
 costs ~15-20 cycles on modern CPUs. For unpredictable conditions, `cmov`
 usually wins; for predictable ones, a branch usually wins.
 
-Caveat: `cmov` always *reads* both operands, so it cannot be used to guard
-a possibly-invalid memory load.
+**Caveat: `cmov` cannot guard a memory access.** Its source operand may be
+memory, and that memory is read **unconditionally** — the condition only
+decides whether the loaded value is kept, not whether the load happens.
+
+Consider the C fragment:
+
+```c
+x = (p != NULL) ? *p : 0;
+```
+
+With a branch, the dereference is genuinely skipped when `p` is null:
+
+```nasm
+    xor rax, rax
+    test rdi, rdi
+    jz  .done              ; p is null — never touch [rdi]
+    mov rax, [rdi]
+.done:
+```
+
+The `cmov` version looks equivalent but is not:
+
+```nasm
+    xor rax, rax
+    test rdi, rdi
+    cmovnz rax, [rdi]      ; SEGFAULTS when rdi is null!
+```
+
+The load from `[rdi]` is performed either way. When `rdi` is null the CPU
+faults before the condition is ever applied. `cmov` only suppresses the
+*write* to the destination register, never the read of the source.
+
+So: use `cmov` to select between values you can always safely compute.
+Use a branch when one side is only *valid* under the condition — a
+dereference, a division that might be by zero, an array index that might
+be out of range.
+
+(This is the same constraint SIMD lives under, incidentally. Vector
+select instructions compute every lane and then blend, so any lane that
+could fault has to be handled some other way.)
 
 This branchless mindset is direct preparation for SIMD, where there are
 no branches per-element at all — you compute both sides and select.
