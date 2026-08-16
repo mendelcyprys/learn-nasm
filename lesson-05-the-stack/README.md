@@ -106,6 +106,52 @@ easier, and GDB's `backtrace` relies on either frame pointers or DWARF
 unwind info — which your hand-written NASM has neither of. Use `rbp`
 frames while learning; you'll see the payoff in GDB immediately.
 
+### Why `rsp`-relative addressing works — and when it stops working
+
+Omitting the frame pointer works because with a **fixed-size** frame the
+compiler knows, at every instruction, exactly how far `rsp` sits below the
+frame base. It subtracted a constant at entry; any `push` in between
+shifts things by a known 8. So it just bakes the adjusted constant into
+each offset: what would be `[rbp - 16]` becomes `[rsp + 16]`, and after an
+intervening `push` the *same* variable becomes `[rsp + 24]`. Different
+literal offsets, same slot — all resolved at compile time.
+
+**Dynamic allocation breaks that.** If you do the assembly equivalent of
+`alloca()` or a C variable-length array:
+
+```nasm
+    ; reserve `rdi` bytes of stack — size unknown until runtime
+    sub rsp, rdi
+    and rsp, -16            ; re-align to 16 bytes (rounds rsp DOWN)
+```
+
+...the compiler no longer knows the distance from `rsp` to the frame base.
+It's whatever `rdi` happened to be, plus an alignment adjustment of 0–15
+bytes that also isn't known statically. There is no constant to bake in.
+
+So compilers **force a frame pointer back on** for any function using
+`alloca` or a VLA, regardless of optimization level — GCC and Clang both
+do this. `rbp` still points at a fixed anchor, so fixed-size locals stay
+addressable at `[rbp - 8]`, `[rbp - 16]` and so on, while the dynamic
+region lives below in the unknown-sized gap. Cleanup is `mov rsp, rbp` /
+`pop rbp`, which discards the dynamic allocation without needing to know
+its size — another thing that only works because `rbp` was preserved.
+
+Two consequences worth knowing:
+
+- **You cannot use the red zone** (section 5 below) alongside dynamic
+  allocation. The red zone is defined relative to `rsp`, and you've just
+  made `rsp` move unpredictably.
+- **Alignment is your problem.** `and rsp, -16` clears the low four bits,
+  rounding `rsp` down to a 16-byte boundary. Skip it and you'll violate
+  the ABI's alignment rule the next time you `call` anything (Lesson 06).
+
+For unwinding specifically, DWARF can describe a dynamic frame without
+`rbp` — `DW_CFA_def_cfa_expression` lets it encode a computed rule rather
+than a constant offset. But that only helps a debugger walk the stack; it
+doesn't help the *generated code* find its own variables, which is why the
+frame pointer comes back regardless.
+
 There are also two dedicated instructions:
 
 ```nasm
@@ -151,10 +197,24 @@ leaf_function:
     ret
 ```
 
-The kernel guarantees signal handlers won't clobber it. **But** anything
-you `call` will immediately overwrite it, and — importantly — the red zone
-does *not* exist in kernel code or in signal handlers themselves. Use it
-only in genuine leaf functions.
+The guarantee comes from the kernel: when it delivers a signal, it skips
+128 bytes below `rsp` before building the signal frame, so your scratch
+data survives. A signal handler is itself ordinary userspace code and gets
+its own red zone on the same terms.
+
+The real limit is the leaf requirement: **anything you `call` immediately
+overwrites the red zone**, since the callee's own frame starts right
+there. So use it only in functions that call nothing.
+
+Two footnotes, neither of which affects this course:
+
+- **Kernel code has no red zone.** Linux compiles itself with
+  `-mno-red-zone`, because in kernel mode a hardware interrupt pushes its
+  frame directly onto the current stack with no 128-byte skip. This
+  matters only if you are writing kernel or interrupt-handler code —
+  application code is unaffected.
+- **It's a System V thing.** The Windows x64 ABI has no red zone at all,
+  so code written to rely on it isn't portable across the two.
 
 ## 6. Program: stack in action
 
@@ -319,3 +379,22 @@ correctly.
 (`a` calls `b` calls `c`), each with a proper `rbp` frame. Break in `c`
 and run `bt`. Then use `frame 1` and `frame 2` to inspect each caller's
 frame with `x/4gx $rbp`.
+
+**5.8 — Contract: dynamic allocation.**
+
+> `dyn_fill(rdi = n) -> rax = sum of the values written`
+> Allocate space for `n` quadwords on the stack at runtime (not a fixed
+> `sub rsp, CONST`), fill slot *i* with *i*², sum them, and release the
+> space. `rsp` must be exactly what it was on entry when you return.
+
+Requirements: use a proper `rbp` frame, compute the byte count from `n`,
+re-align with `and rsp, -16` after the subtraction, and clean up with
+`mov rsp, rbp` / `pop rbp` rather than by adding back a size you tracked.
+
+In GDB, break after the `and rsp, -16` and check three things:
+`p $rbp - $rsp` (the gap — note it is not a round number you chose),
+`p $rsp % 16` (must be 0), and `x/8gx $rsp` as you fill the region.
+
+Then call it twice with different `n` values in the same run and confirm
+`rsp` returns to the identical value both times. That's the payoff of
+restoring from `rbp` instead of tracking the size.
