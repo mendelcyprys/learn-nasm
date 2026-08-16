@@ -234,12 +234,20 @@ This is what breakpoint control is for.
 
 ```gdb
 break _start                # by symbol
-break *0x401015             # by exact address (needed for local labels!)
+break _start.loop           # by local label — use its full mangled name
+break *0x401015             # by exact address
 break *_start+42            # by offset from a symbol
 ```
 
-Since NASM local labels (`.loop`) never reach the symbol table, address
-breakpoints are how you stop inside a function. Get addresses from
+NASM local labels are emitted as *local* symbols under a mangled name —
+`.loop` inside `_start` becomes `_start.loop` — so you can break on them
+by name. Check what's available with `nm loops`, which lists local
+symbols with a lowercase type letter.
+
+Address breakpoints (`break *ADDR`) are still worth knowing, for three
+cases: stripped binaries where local symbols are gone, stopping at a
+specific instruction rather than a label, and setting a breakpoint
+mid-instruction-sequence where no label exists. Get addresses from
 `disassemble` or `objdump -d`.
 
 ### Conditional breakpoints — the big one
