@@ -49,9 +49,26 @@ other_function:
 
 A label starting with `.` is scoped to the most recent non-local label
 above it. This lets you use `.loop` and `.done` in every function without
-inventing unique names. Local labels do not appear in the symbol table,
-so GDB can't break on them by name — which is exactly why you'll learn
-address-based breakpoints later.
+inventing unique names.
+
+Internally NASM mangles them by prefixing the parent: `.loop` under
+`_start` becomes the symbol **`_start.loop`**. That mangled name *is*
+written to the symbol table, as a **local** symbol rather than a global
+one — so GDB can break on it by its full name:
+
+```gdb
+break _start.loop           # works
+break .loop                 # does not — the parent prefix is part of the name
+```
+
+Because they're local symbols, they disappear if the binary is stripped
+(`strip`, or linking with `-s`). Global labels survive that; local ones
+don't. `nm` distinguishes them by case — `T` for a global text symbol,
+`t` for a local one:
+
+```sh
+nm loops | grep loop
+```
 
 ### Don't name a label after a register
 
