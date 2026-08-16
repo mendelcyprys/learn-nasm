@@ -101,14 +101,32 @@ This distinction is the single most common beginner error in NASM. In
 
 ### Size ambiguity
 
-When neither operand tells NASM how many bytes to touch, you must say:
+When neither operand tells NASM how many bytes to touch, you should say
+so explicitly:
 
 ```nasm
-mov [counter], 5              ; ERROR: 1 byte? 2? 4? 8?
+mov [counter], 5              ; AMBIGUOUS — see below
 mov qword [counter], 5        ; 8 bytes
 mov dword [counter], 5        ; 4 bytes
 mov byte  [counter], 5        ; 1 byte
 ```
+
+The ambiguity is real because **a label has no type in NASM**. Even if
+`counter` was declared `resq 1` or `dq 0`, the label is just an address by
+the time you write `[counter]` — NASM does not carry the declaration
+forward the way MASM does.
+
+What happens without a suffix depends on your NASM version, and the
+modern behaviour is the dangerous one:
+
+- **NASM 2.x** rejects it: `error: operation size not specified`.
+- **NASM 3.x** accepts it and silently defaults to **byte**. The listing
+  shows opcode `C6` (`MOV r/m8, imm8`) and a one-byte immediate.
+
+So on NASM 3, `mov [result], 5` against a `resq 1` writes **one** byte
+and leaves the other seven whatever they were. No error, no warning. This
+is precisely the bug the suffix prevents, and it fails silently — always
+write the suffix.
 
 With a register operand there's no ambiguity — the register's width
 decides:
@@ -289,10 +307,43 @@ characters `H`, `i`, `!`, newline into it one `mov byte` at a time, then
 print it with one `write` syscall. Use `x/16xb` in GDB after each store to
 watch the buffer fill.
 
-**2.4 — Size suffix hunting.** Write `mov [result], 5` without a size
-suffix and try to assemble it. Read NASM's error message carefully. Then
-fix it three different ways (`qword`, `dword`, `byte`) and use
-`x/8xb &result` to see how each one differs in what it actually touched.
+**2.4 — Size suffix hunting.** Write `mov [result], 5` with no size
+suffix and assemble it *with a listing file*:
+
+```sh
+nasm -f elf64 data.asm -o data.o -l data.lst
+```
+
+On NASM 3.x this assembles without complaint. Find the line in
+`data.lst` and decode the bytes yourself. You should see something like:
+
+```
+C6 04 25 [00000000] 05
+```
+
+- `C6` — the opcode. Look it up: `MOV r/m8, imm8`. **Eight-bit.**
+- `04` — ModRM byte; `rm=100` means a SIB byte follows.
+- `25` — SIB; encodes "disp32, no base register."
+- `[00000000]` — the relocation placeholder for `result`'s address
+  (Lesson 01 territory — the linker fills this in).
+- `05` — the immediate, one byte.
+
+Confirm the total is 8 bytes by checking the offset of the *next* line in
+the listing.
+
+Now write it three ways explicitly (`qword`, `dword`, `byte`), assemble
+each, and compare opcodes. Then run each under GDB and use
+`x/8xb &result` to see how many of the eight reserved bytes each version
+actually touched.
+
+The lesson: `resq 1` reserved eight bytes, and the no-suffix version wrote
+**one**, silently leaving seven untouched. `result` is only an address —
+the `resq` gave the label no type, so NASM fell back to its own default
+rather than to your declaration. (MASM would have inferred qword here.
+NASM does not.)
+
+Bonus: try `mov [result], rax` and `mov [result], al` and confirm from the
+listing that these need no suffix at all — the register width settles it.
 
 **2.5 — Contract exercise.** Write a code fragment that satisfies this
 contract, and verify it in GDB:
