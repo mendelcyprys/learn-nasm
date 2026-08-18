@@ -257,6 +257,50 @@ registers and run at full speed — but you only get **four** of them, since
 x86 has four hardware debug registers. Exceeding that silently drops GDB
 into slow software watchpoints.
 
+### If you're running under emulation, read this first
+
+**In UTM's Emulate mode (QEMU TCG), hardware watchpoints often don't
+work.** GDB will happily report `Hardware watchpoint 2: ...`, you'll
+`continue`, and the program will run past the write without ever stopping
+— or appear to hang. The guest kernel accepts the request, but the
+emulated CPU never delivers the debug trap, because QEMU's software x86
+emulation has incomplete support for the `DR0`–`DR7` debug registers.
+
+`Ctrl-C` to interrupt, then force software watchpoints:
+
+```gdb
+set can-use-hw-watchpoints 0
+```
+
+Software watchpoints work by single-stepping the whole program and
+comparing the value after every instruction. They always work, but
+they're slow — and slower still inside an emulator. So don't set one at
+`_start` and walk the entire program. Break close to the code you care
+about first:
+
+```gdb
+b _start.maxloop
+r
+set can-use-hw-watchpoints 0
+watch *(long*)&maxval
+c
+```
+
+To confirm which situation you're in, `info watchpoints` shows a hit
+count per watchpoint. A hardware watchpoint that stayed at zero hits
+while the program ran to completion is the emulation gap, not a bug in
+your code.
+
+Often a conditional breakpoint (Lesson 04) is the better tool anyway —
+it runs at full speed and needs no debug-register support:
+
+```gdb
+b *0x40101e if $rax > 5
+```
+
+Reach for a watchpoint when you genuinely don't know *where* the write
+happens; use a conditional breakpoint when you do.
+
 ### Practical session
 
 ```gdb
@@ -306,6 +350,9 @@ answers in GDB.
 `arrays.asm`: make the doubling loop write one element past the end of
 `dst`. Set a watchpoint on the 8 bytes just past `dst` and let GDB find
 the offending instruction for you.
+
+Under emulation, `set can-use-hw-watchpoints 0` first, and set the
+watchpoint just before the doubling loop rather than at `_start`.
 
 **7.4 — Contract: `memset`.**
 
